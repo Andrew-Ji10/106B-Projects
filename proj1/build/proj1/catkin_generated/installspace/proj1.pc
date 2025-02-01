@@ -1,0 +1,8 @@
+prefix=/home/cc/ee106b/sp25/class/ee106b-aaf/ros_workspaces/proj1/install
+
+Name: proj1
+Description: Description of proj1
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

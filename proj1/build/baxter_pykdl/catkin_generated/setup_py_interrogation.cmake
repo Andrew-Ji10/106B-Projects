@@ -1,0 +1,7 @@
+set(baxter_pykdl_SETUP_PY_SETUP_MODULE "distutils.core")
+set(baxter_pykdl_SETUP_PY_VERSION "0.1.0")
+set(baxter_pykdl_SETUP_PY_SCRIPTS "")
+set(baxter_pykdl_SETUP_PY_PACKAGES "baxter_pykdl;sawyer_pykdl;baxter_kdl;urdf_parser_py")
+set(baxter_pykdl_SETUP_PY_PACKAGE_DIRS "src/baxter_pykdl;src/sawyer_pykdl;src/baxter_kdl;src/urdf_parser_py")
+set(baxter_pykdl_SETUP_PY_MODULES "")
+set(baxter_pykdl_SETUP_PY_MODULE_DIRS "")

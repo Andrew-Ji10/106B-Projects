@@ -1,0 +1,2 @@
+ar_track_alvar/ar_track_alvar:ar_track_alvar/ar_track_alvar_msgs:baxter_pykdl:proj1:proj1_pkg:usb_cam
+-DCATKIN_DEVEL_PREFIX=/home/cc/ee106b/sp25/class/ee106b-aaf/ros_workspaces/proj1/devel -DCMAKE_INSTALL_PREFIX=/home/cc/ee106b/sp25/class/ee106b-aaf/ros_workspaces/proj1/install -G Unix Makefiles

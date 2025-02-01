@@ -1,0 +1,3 @@
+[submodule "proj1/proj1/src/ar_track_alvar"]
+	path = proj1/proj1/src/ar_track_alvar
+	url = https://github.com/machinekoder/ar_track_alvar.git
