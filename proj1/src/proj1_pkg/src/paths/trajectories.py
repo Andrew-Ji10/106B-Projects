@@ -192,8 +192,8 @@ class LinearTrajectory(Trajectory):
             # For the second half of the trajectory, maintain a constant acceleration
             # Hint: Calculate the remaining distance to the goal position. 
             pos = self.target_pose(self.total_time/2)[0:3] + (self.v_max * (time-(self.total_time/2))) - (0.5 * self.acceleration * (time-(self.total_time/2))**2)
-        print(pos)
-        print(time)
+        # print(pos)
+        # print(time)
         return np.hstack((pos, self.desired_orientation))
 
     def target_velocity(self, time):
@@ -445,6 +445,6 @@ if __name__ == '__main__':
 
     path = LinearTrajectory(np.array([0, 0, 0]), np.array([.1, .1, .1]), 10) 
     # ,[0.71138694, 0.04838309, 0.22936752]
-    path = PolygonalTrajectory(start_position=np.array([0.68855069, 0.16039475, 0.3812663]), points=np.array([[0.71768455, 0.26506727, 0.22540179],[0.71138694, 0.04838309, 0.22936752]]), total_time=5)
+    path = PolygonalTrajectory(start_position=np.array([0.68855069, 0.16039475, 0.3812663]), points=np.array([[0.71768455, 0.26506727, 0.22540179],[0.71138694, 0.04838309, 0.22936752]]), total_time=15)
     # path = CircularTrajectory(np.array([0.2, 0.4, 0.6]), .3, 10)
     path.display_trajectory()

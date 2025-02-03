@@ -86,7 +86,7 @@ def get_trajectory(limb, kin, ik_solver, tag_pos, args):
     listener = tf2_ros.TransformListener(tfBuffer)
 
     try:
-        trans = tfBuffer.lookup_transform('base', 'right_gripper_tip', rospy.Time(0), rospy.Duration(10.0))
+        trans = tfBuffer.lookup_transform('base', 'right_gripper_base', rospy.Time(0), rospy.Duration(10.0))
     except Exception as e:
         print(e)
 
@@ -97,12 +97,12 @@ def get_trajectory(limb, kin, ik_solver, tag_pos, args):
         target_pos = tag_pos[0]
         target_pos[2] += 0.4 #linear path moves to a Z position above AR Tag.
         print("TARGET POSITION:", target_pos)
-        trajectory = LinearTrajectory(start_position=current_position, goal_position=target_pos, total_time=9)
+        trajectory = LinearTrajectory(start_position=current_position, goal_position=target_pos, total_time=4)
     elif task == 'circle':
         target_pos = tag_pos[0]
         target_pos[2] += 0.5
         print("TARGET POSITION:", target_pos)
-        trajectory = CircularTrajectory(center_position=target_pos, radius=0.1, total_time=15)    
+        trajectory = CircularTrajectory(center_position=target_pos, radius=0.1, total_time=6)    
     elif task == 'polygon':
         print("tagpos", tag_pos)
         points = np.array([point + np.array([0,0,0.5]) for point in tag_pos])
@@ -131,10 +131,11 @@ def get_controller(controller_name, limb, kin):
         Kv = None
         controller = WorkspaceVelocityController(limb, kin, Kp, Kv)
     elif controller_name == 'jointspace':
-        # YOUR CODE HERE
-        Kp = None
-        Kv = None
-        controller = PDJointVelocityController(limb, kin, Kp, Kv)
+        Kp = 3 * np.array([0.4, 2, 1.7, 1.7, 2, 2, 3])
+        Kd = 0.3 * np.array([2, 1, 2, 0.5, 5, 0.8, 0.8])
+        Ki = 0 * np.array([1.4, 1.4, 1.4, 1, 0.6, 0.6, 0.6])
+        Kw = np.array([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])
+        controller = PDJointVelocityController(limb, kin, Kp, Ki, Kd, Kw)
     elif controller_name == 'torque':
         # YOUR CODE HERE
         Kp = None

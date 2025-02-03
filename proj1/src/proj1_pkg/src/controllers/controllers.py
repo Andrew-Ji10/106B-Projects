@@ -25,17 +25,70 @@ try:
     import intera_interface
     from geometry_msgs.msg import PoseStamped
     from moveit_msgs.msg import RobotTrajectory
+    from trac_ik_python.trac_ik import IK
+    from paths.trajectories import LinearTrajectory
+    from paths.paths import MotionPath
 except:
     pass
 
 NUM_JOINTS = 7
+
+def get_traj(limb, kin, ik_solver, tag_pos, rate=1000, num_way=40):
+    """
+    Returns an appropriate robot trajectory for the specified task.  You should 
+    be implementing the path functions in paths.py and call them here
+    
+    Parameters
+    ----------
+    task : string
+        name of the task.  Options: line, circle, square
+    tag_pos : 3x' :obj:`numpy.ndarray`
+        
+    Returns
+    -------
+    :obj:`moveit_msgs.msg.RobotTrajectory`
+    """
+    # target_position = tag_pos[0]
+    tfBuffer = tf2_ros.Buffer()
+    listener = tf2_ros.TransformListener(tfBuffer)
+
+    try:
+        trans = tfBuffer.lookup_transform('base', 'right_gripper_base', rospy.Time(0), rospy.Duration(10.0))
+    except Exception as e:
+        print(e)
+
+    current_position = np.array([getattr(trans.transform.translation, dim) for dim in ('x', 'y', 'z')])
+
+    target_pos = tag_pos
+    target_pos[2] += 0.6 #linear path moves to a Z position above AR Tag.
+    trajectory = LinearTrajectory(start_position=current_position, goal_position=target_pos, total_time=rate/1000)
+    
+    #trajectory.display_trajectory()
+
+    path = MotionPath(limb, kin, ik_solver, trajectory)
+    
+    ShouldMove = np.linalg.norm(target_pos-current_position) >= 0.01
+    
+    if (ShouldMove):
+        print("Current Position:", current_position)
+        print("TARGET POSITION:", target_pos)
+  
+
+
+    return path.to_robot_trajectory(num_way, True), ShouldMove
 
 class Controller:
 
     def __init__(self, limb, kin):
         """
         Constructor for the superclass. All subclasses should call the superconstructor
-
+    self.plot_results(
+                times,
+                actual_positions, 
+                actual_velocities, 
+                target_positions, 
+                target_velocities
+            )
         Parameters
         ----------
         limb : :obj:`baxter_interface.Limb` or :obj:`intera_interface.Limb`
@@ -344,7 +397,7 @@ class Controller:
 
             # If the controller has timed out, stop moving and return false
             if timeout is not None and t >= timeout:
-                # Set velocities to zero
+                # Set velocities to zerogripper
                 self.stop_moving()
                 return False
 
@@ -358,6 +411,9 @@ class Controller:
                 target_acceleration, 
                 current_index
             ) = self.interpolate_path(path, t, current_index)
+
+            print("target pos", target_position)
+            print("actual pos", current_position)
 
             # For plotting
             if log:
@@ -387,7 +443,7 @@ class Controller:
             )
         return True
 
-    def follow_ar_tag(self, tag, rate=200, timeout=None, log=False):
+    def follow_ar_tag(self, tag, rate=1000, timeout=1500, log=False):
         """
         takes in an AR tag number and follows it with the baxter's arm.  You 
         should look at execute_path() for inspiration on how to write this. 
@@ -405,14 +461,50 @@ class Controller:
             If you want the controller to terminate after a certain number
             of seconds, specify a timeout in seconds.
         log : bool
-            whether or not to display a plot of the controller performance
+            whether or not to display a plot of the controller pgrippererformance
 
         Returns
         -------
         bool
             whether the controller completes the path or not
         """
-        raise NotImplementedError
+
+        # For timing
+        start_t = rospy.Time.now()
+        r = rospy.Rate(rate)
+        ik_solver = IK("base", "right_hand")
+
+        # tag looking
+        tfBuffer = tf2_ros.Buffer()
+        listener = tf2_ros.TransformListener(tfBuffer)
+
+        to_frame = 'ar_marker_10'
+        done = True
+
+        while not rospy.is_shutdown():
+            t = (rospy.Time.now() - start_t).to_sec()
+
+            if timeout is not None and t >= timeout:
+                # Set velocities to zerogripper
+                self.stop_moving()
+                return False
+
+            while not rospy.is_shutdown():
+                try:
+                    trans = tfBuffer.lookup_transform('base', to_frame, rospy.Time(0), rospy.Duration(10.0))
+                    break
+                except Exception as e:
+                    print("Retrying ...")
+
+            updatedTagPos = np.array([getattr(trans.transform.translation, dim) for dim in ('x', 'y', 'z')])
+
+
+            updated_traj, ShouldMove = get_traj(self._limb, self._kin, ik_solver, updatedTagPos, rate=rate, num_way=40) # in this case rate is how much time given to controller for path
+            if (ShouldMove):
+                self.execute_path(updated_traj, rate=100, timeout=200, log=False)
+            r.sleep()
+        
+        return True
 
 class FeedforwardJointVelocityController(Controller):
     def step_control(self, target_position, target_velocity, target_acceleration):
@@ -423,7 +515,7 @@ class FeedforwardJointVelocityController(Controller):
         target_velocity: 7x' ndarray of desired velocities
         target_acceleration: 7x' ndarray of desired accelerations
         """
-        self._limb.set_joint_velocities(joint_array_to_dict(target_velocity, self._limb))
+        self._limb.set_joint_velocities(joint_array_to_dict(targgripperet_velocity, self._limb))
 
 class WorkspaceVelocityController(Controller):
     """
@@ -473,33 +565,40 @@ class WorkspaceVelocityController(Controller):
 
 class PDJointVelocityController(Controller):
     """
-    Look at the comments on the Controller class above.  The difference between this controller and the 
-    PDJointVelocityController is that this controller turns the desired workspace position and velocity
-    into desired JOINT position and velocity.  Then it compares the difference between the baxter's 
+    Look at the comments on the Controller class above.  This controller turns the desired workspace position and velocity
+    into desired JOINT position and velocity.  Then it compares the difference between the sawyer's 
     current JOINT position and velocity and desired JOINT position and velocity to come up with a
-    joint velocity command and sends that to the baxter.  notice the shape of Kp and Kv
+    joint velocity command and sends that to the sawyer.
     """
-    def __init__(self, limb, kin, Kp, Kv):
+    def __init__(self, limb, kin, Kp, Ki, Kd, Kw):
         """
         Parameters
         ----------
-        limb : :obj:`baxter_interface.Limb`
-        kin : :obj:`BaxterKinematics`
-        Kp : 7x' :obj:`numpy.ndarray`
-        Kv : 7x' :obj:`numpy.ndarray`
+        limb : :obj:`sawyer_interface.Limb`
+        kin : :obj:`sawyerKinematics`
+        Kp : 7x' :obj:`numpy.ndarray` of proportional constants
+        Ki: 7x' :obj:`numpy.ndarray` of integral constants
+        Kd : 7x' :obj:`numpy.ndarray` of derivative constants
+        Kw : 7x' :obj:`numpy.ndarray` of anti-windup constants
         """
         Controller.__init__(self, limb, kin)
         self.Kp = np.diag(Kp)
-        self.Kv = np.diag(Kv)
-        self.is_jointspace_controller = True
+        self.Ki = np.diag(Ki)
+        self.Kd = np.diag(Kd)
+        self.Kw = Kw
+        
+        self.integ_error = np.zeros(7)
+        
+        self.is_joinstpace_controller = True
 
     def step_control(self, target_position, target_velocity, target_acceleration):
         """
-        Makes a call to the robot to move according to it's current position and the desired position 
-        according to the input path and the current time. his method should call
-        get_joint_positions and get_joint_velocities from the utils package to get the current joint 
-        position and velocity and self._limb.set_joint_velocities() to set the joint velocity to something.  
-        You may find joint_array_to_dict() in utils.py useful as well.
+        makes a call to the robot to move according to it's current position and the desired position 
+        according to the input path and the current time. Each Controller below extends this 
+        class, and implements this accordingly. This method should call
+        self._limb.joint_angle and self._limb.joint_velocity to get the current joint position and velocity
+        and self._limb.set_joint_velocities() to set the joint velocity to something.  You may find
+        joint_array_to_dict() in utils.py useful
 
         Parameters
         ----------
@@ -507,9 +606,25 @@ class PDJointVelocityController(Controller):
         target_velocity: 7x' :obj:`numpy.ndarray` of desired velocities
         target_acceleration: 7x' :obj:`numpy.ndarray` of desired accelerations
         """
-        raise NotImplementedError
-        control_input = None
-        self._limb.set_joint_velocities(joint_array_to_dict(control_input, self._limb))
+        current_position = get_joint_positions(self._limb)
+        current_velocity = get_joint_velocities(self._limb)
+        
+        # TODO: implement PID control to set the joint velocities. 
+
+        error = target_position - current_position
+        proportional = np.dot(self.Kp, error)
+
+        self.integ_error = (self.Kw * self.integ_error) + error
+        integral = np.dot(self.Ki, self.integ_error)
+
+        err_d = target_velocity - current_velocity
+        derivative = np.dot(self.Kd, err_d)
+
+        controller_velocity = proportional + integral + derivative
+
+        self._limb.set_joint_velocities(joint_array_to_dict(controller_velocity, self._limb))
+
+
 
 class PDJointTorqueController(Controller):
     def __init__(self, limb, kin, Kp, Kv):
