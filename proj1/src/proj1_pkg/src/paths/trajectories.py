@@ -1,6 +1,7 @@
 #!/usr/bin/env/python
 
 import numpy as np
+import argparse
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from mpl_toolkits.mplot3d import Axes3D
@@ -78,8 +79,9 @@ class Trajectory:
         trajectory_name = self.__class__.__name__
         times = np.linspace(0, self.total_time, num=num_waypoints)
         target_positions = np.vstack([self.target_pose(t)[:3] for t in times])
+        print("target_positions: ", target_positions)
         target_velocities = np.vstack([self.target_velocity(t)[:3] for t in times])
-        
+    
         fig = plt.figure(figsize=plt.figaspect(0.5))
         colormap = plt.cm.brg(np.fmod(np.linspace(0, 1, num=num_waypoints), 1))
 
@@ -322,13 +324,14 @@ class PolygonalTrajectory(Trajectory):
         print(start_position)
         self.time_segment = total_time/len(points)
         self.points = np.append(np.array([self.start_position]), points, axis=0)
-        print("values for debug", self.points.shape, len(self.points))
         self.distances = np.array([self.points[i+1] - self.points[i] for i in range(len(self.points)-1)])
         self.accelerations = np.array([(dist * 4) / (self.time_segment ** 2) for dist in self.distances])
         #(self.distance * 4.0) / (self.total_time ** 2) # keep constant magnitude acceleration
         self.v_maxs = (self.time_segment / 2.0) * self.accelerations # maximum velocity magnitude
         self.desired_orientation = np.array([0, 1, 0, 0])
-        #pass
+        print("values for debug", self.points.shape, len(self.points), self.distances, self.accelerations, self.v_maxs)
+        #pass    path = PolygonalTrajectory(start_position=np.array([0.68855069, 0.16039475, 0.3812663]), points=np.array([[0.71768455, 0.26506727, 0.22540179]]), total_time=15)
+
         # Trajectory.__init__(self, total_time)
 
     def target_pose(self, time):
@@ -353,11 +356,11 @@ class PolygonalTrajectory(Trajectory):
         relativeTime = time % self.time_segment
         
         if currStart > len(self.points) - 2:
-            currStart = len(self.points) - 2
+            pos = self.points[currStart]
 
-        print("currStart", currStart, time, self.time_segment)
+        #print("currStart", currStart, time, self.time_segment)
     
-        if relativeTime <= self.time_segment / 2.0:
+        elif relativeTime <= self.time_segment / 2.0:
             # TODO: calculate the position of the end effector at time t, 
             # For the first half of the trajectory, maintain a constant acceleration
             pos = 0.5 * self.accelerations[currStart] * relativeTime ** 2 + self.points[currStart]
@@ -365,9 +368,8 @@ class PolygonalTrajectory(Trajectory):
             # TODO: Calculate the position of the end effector at time t, 
             # For the second half of the trajectory, maintain a constant acceleration
             # Hint: Calculate the remaining distance to the goal position. 
-            pos = self.target_pose(self.time_segment * (currStart + 0.5))[0:3] + (self.v_maxs[currStart] * (relativeTime-(self.time_segment/2))) 
-            - (0.5 * self.accelerations[currStart] * (relativeTime-(self.time_segment/2))**2)
-        print(pos)
+            pos = self.points[currStart] + 0.5*self.accelerations[currStart]*((self.time_segment/2)**2) + self.v_maxs[currStart]*(relativeTime-(self.time_segment/2)) - 0.5*self.accelerations[currStart]*((relativeTime-self.time_segment/2)**2)
+        print("position: ", pos, "segment: ", currStart, "relativeTime: ", relativeTime)
         # print(time)
         return np.hstack((pos, self.desired_orientation))
         #pass
@@ -390,7 +392,9 @@ class PolygonalTrajectory(Trajectory):
         currStart = (int)(time // self.time_segment) # point we have already reached
         relativeTime = time % self.time_segment
 
-        if relativeTime <= self.time_segment / 2.0:
+        if currStart > len(self.points) - 2:
+            linear_vel = np.array([0,0,0])
+        elif relativeTime <= self.time_segment / 2.0:
             # TODO: calculate velocity using the acceleration and time
             # For the first half of the trajectory, we maintain a constant acceleration
 
@@ -402,6 +406,9 @@ class PolygonalTrajectory(Trajectory):
 
 
             linear_vel = self.v_maxs[currStart] - ((relativeTime - (self.time_segment/2)) * self.accelerations[currStart])
+        
+        print("velocity:", linear_vel, "relative_time: ", relativeTime)
+
         return np.hstack((linear_vel, np.zeros(3)))
         #pass
 
@@ -413,7 +420,7 @@ def define_trajectories(args):
     elif args.task == 'circle':
         trajectory = CircularTrajectory()
     elif args.task == 'polygon':
-        trajectory = PolygonalTrajectory()
+        trajectory = PolygonalTrajectory(start_position=np.array([0.68855069, 0.16039475, 0.3812663]), points=np.array([[0.71138694, 0.04838309, 0.22936752],[0.68855069, 0.16039475, 0.3812663]]), total_time=15)
     return trajectory
 
 if __name__ == '__main__':
@@ -422,16 +429,22 @@ if __name__ == '__main__':
     only visualizes the end effector position, not its orientation. Use the 
     animate function to visualize the full trajectory in a 3D plot.
     """
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-task', '-t', type=str, default='line', help=
-        'Options: line, circle, polygon.  Default: line'
-    )
-    parser.add_argument('--animate', action='store_true', help=
-        'If you set this flag, the animated trajectory will be shown.'
-    )
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('-task', '-t', type=str, default='line', help=
+    #     'Options: line, circle, polygon.  Default: line'
+    # )
+    # parser.add_argument('--animate', action='store_true', help=
+    #     'If you set this flag, the animated trajectory will be shown.'
+    # )
+    # args = parser.parse_args()
 
-    trajectory = define_trajectories(args)
+    # trajectory = define_trajectories(args)
     
-    if trajectory:
-        trajectory.display_trajectory(show_animation=args.animate)
+    # if trajectory:
+    #     trajectory.display_trajectory(show_animation=args.animate)
+
+    path = LinearTrajectory(np.array([0, 0, 0]), np.array([.1, .1, .1]), 10) 
+    # ,[0.71138694, 0.04838309, 0.22936752]
+    path = PolygonalTrajectory(start_position=np.array([0.68855069, 0.16039475, 0.3812663]), points=np.array([[0.71768455, 0.26506727, 0.22540179],[0.71138694, 0.04838309, 0.22936752]]), total_time=5)
+    # path = CircularTrajectory(np.array([0.2, 0.4, 0.6]), .3, 10)
+    path.display_trajectory()
