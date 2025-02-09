@@ -58,7 +58,7 @@ def lookup_tag(tag_number):
     tag_pos = [getattr(trans.transform.translation, dim) for dim in ('x', 'y', 'z')]
     return np.array(tag_pos)
 
-def get_traj(limb, kin, ik_solver, tag_pos, rate, num_way=40):
+def get_traj(limb, kin, ik_solver, tag_pos, rate, num_way=10):
     """
     Returns an appropriate robot trajectory for the specified task.  You should 
     be implementing the path functions in paths.py and call them here
@@ -80,17 +80,17 @@ def get_traj(limb, kin, ik_solver, tag_pos, rate, num_way=40):
     listener = tf2_ros.TransformListener(tfBuffer)
 
     try:
-        trans = tfBuffer.lookup_transform('base', 'right_gripper_base', rospy.Time(0), rospy.Duration(10.0))
+        trans = tfBuffer.lookup_transform('base', 'stp_022412TP99883_tip', rospy.Time(0), rospy.Duration(10.0))
     except Exception as e:
         print(e)
 
     current_position = np.array([getattr(trans.transform.translation, dim) for dim in ('x', 'y', 'z')])
-    print("Current Position:", current_position)
+    #print("Current Position:", current_position)
 
     target_pos = tag_pos[0]
     target_pos[2] += 0.4 #linear path moves to a Z position above AR Tag.
-    print("TARGET POSITION:", target_pos)
-    trajectory = LinearTrajectory(start_position=current_position, goal_position=target_pos, total_time=rate/1000)
+    #print("TARGET POSITION:", target_pos)
+    trajectory = ConstTrajectory(start_position=current_position, goal_position=target_pos, total_time=rate/1000)
     
     trajectory.display_trajectory()
 
@@ -115,8 +115,8 @@ def get_controller(controller_name, limb, kin):
         Kv = None
         controller = WorkspaceVelocityController(limb, kin, Kp, Kv)
     elif controller_name == 'jointspace':
-        Kp = 3 * np.array([0.4, 2, 1.7, 1.7, 2, 2, 3])
-        Kd = 0.3 * np.array([2, 1, 2, 0.5, 5, 0.8, 0.8])
+        Kp = 0.6 * np.array([1.8, 2.4, 1.7, 2, 2, 2.4, 2.5])
+        Kd = 0.005 * np.array([2, 1, 3, 0.5, 150, 1.2, 0.8])
         Ki = 0 * np.array([1.4, 1.4, 1.4, 1, 0.6, 0.6, 0.6])
         Kw = np.array([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])
         controller = PDJointVelocityController(limb, kin, Kp, Ki, Kd, Kw)
@@ -150,13 +150,13 @@ if __name__ == "__main__":
     parser.add_argument('-arm', '-a', type=str, default='right', help=
         'Options: left, right.  Default: right'
     )
-    parser.add_argument('-rate', type=int, default=400, help="""
-        This specifies how many ms between loops.  It is important to use a rate
+    parser.add_argument('-rate', type=int, default=25, help="""
+        This specifies how many ms between loops (input is HZ).  It is important to use a rate
         and not a regular while loop because you want the loop to refresh at a
         constant rate, otherwise you would have to tune your PD parameters if 
         the loop runs slower / faster.  Default: 200"""
     )
-    parser.add_argument('-timeout', type=int, default=1500, help=
+    parser.add_argument('-timeout', type=int, default=500, help=
         """after how many seconds should the controller terminate if it hasn\'t already.  
         Default: None"""
     )

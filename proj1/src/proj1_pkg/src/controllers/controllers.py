@@ -27,13 +27,14 @@ try:
     from moveit_msgs.msg import RobotTrajectory
     from trac_ik_python.trac_ik import IK
     from paths.trajectories import LinearTrajectory
+    from paths.trajectories import ConstTrajectory
     from paths.paths import MotionPath
 except:
     pass
 
 NUM_JOINTS = 7
 
-def get_traj(limb, kin, ik_solver, tag_pos, rate=1000, num_way=40):
+def get_traj(limb, kin, trans, ik_solver, tag_pos, rate=1000, num_way=40):
     """
     Returns an appropriate robot trajectory for the specified task.  You should 
     be implementing the path functions in paths.py and call them here
@@ -48,30 +49,39 @@ def get_traj(limb, kin, ik_solver, tag_pos, rate=1000, num_way=40):
     -------
     :obj:`moveit_msgs.msg.RobotTrajectory`
     """
-    # target_position = tag_pos[0]
-    tfBuffer = tf2_ros.Buffer()
-    listener = tf2_ros.TransformListener(tfBuffer)
+    start_t = rospy.Time.now()
 
-    try:
-        trans = tfBuffer.lookup_transform('base', 'right_gripper_base', rospy.Time(0), rospy.Duration(10.0))
-    except Exception as e:
-        print(e)
+    # # target_position = tag_pos[0]
+    # tfBuffer = tf2_ros.Buffer()
+    # listener = tf2_ros.TransformListener(tfBuffer)
+    # print("pos calc -1: ", (rospy.Time.now() - start_t).to_sec())
+
+    # try:
+    #     trans = tfBuffer.lookup_transform('base', 'stp_022412TP99883_tip', rospy.Time(0), rospy.Duration(10.0))
+    # except Exception as e:
+    #     print(e)
 
     current_position = np.array([getattr(trans.transform.translation, dim) for dim in ('x', 'y', 'z')])
 
+    print("pos calc: ", (rospy.Time.now() - start_t).to_sec())
+
+
     target_pos = tag_pos
     target_pos[2] += 0.6 #linear path moves to a Z position above AR Tag.
-    trajectory = LinearTrajectory(start_position=current_position, goal_position=target_pos, total_time=rate/1000)
+    trajectory = ConstTrajectory(start_position=current_position, goal_position=target_pos, total_time=rate/1000)
     
+    print("pt2 calc: ", (rospy.Time.now() - start_t).to_sec())
+
+
     #trajectory.display_trajectory()
 
     path = MotionPath(limb, kin, ik_solver, trajectory)
     
     ShouldMove = np.linalg.norm(target_pos-current_position) >= 0.01
     
-    if (ShouldMove):
-        print("Current Position:", current_position)
-        print("TARGET POSITION:", target_pos)
+    # if (ShouldMove):
+    #     #print("Current Position:", current_position)
+    #     #print("TARGET POSITION:", target_pos)
   
 
 
@@ -412,8 +422,8 @@ class Controller:
                 current_index
             ) = self.interpolate_path(path, t, current_index)
 
-            print("target pos", target_position)
-            print("actual pos", current_position)
+            #print("target pos", target_position)
+            #print("actual pos", current_position)
 
             # For plotting
             if log:
@@ -432,6 +442,8 @@ class Controller:
             if current_index >= max_index:
                 self.stop_moving()
                 break
+            
+            print("execute loop time: ", ((rospy.Time.now() - start_t).to_sec() - t))
 
         if log:
             self.plot_results(
@@ -443,7 +455,7 @@ class Controller:
             )
         return True
 
-    def follow_ar_tag(self, tag, rate=1000, timeout=1500, log=False):
+    def follow_ar_tag(self, tag, rate, timeout=1500, log=False):
         """
         takes in an AR tag number and follows it with the baxter's arm.  You 
         should look at execute_path() for inspiration on how to write this. 
@@ -478,12 +490,11 @@ class Controller:
         tfBuffer = tf2_ros.Buffer()
         listener = tf2_ros.TransformListener(tfBuffer)
 
-        to_frame = 'ar_marker_10'
+        to_frame = 'ar_marker_12'
         done = True
 
         while not rospy.is_shutdown():
             t = (rospy.Time.now() - start_t).to_sec()
-
             if timeout is not None and t >= timeout:
                 # Set velocities to zerogripper
                 self.stop_moving()
@@ -492,17 +503,89 @@ class Controller:
             while not rospy.is_shutdown():
                 try:
                     trans = tfBuffer.lookup_transform('base', to_frame, rospy.Time(0), rospy.Duration(10.0))
+                    trans2 = tfBuffer.lookup_transform('base', 'stp_022412TP99883_tip', rospy.Time(0), rospy.Duration(10.0))
                     break
                 except Exception as e:
                     print("Retrying ...")
 
+            
+            current_position = np.array([getattr(trans2.transform.translation, dim) for dim in ('x', 'y', 'z')])
+            current_joint_position = get_joint_positions(self._limb)
+            current_velocity = get_joint_velocities(self._limb)
+            
             updatedTagPos = np.array([getattr(trans.transform.translation, dim) for dim in ('x', 'y', 'z')])
+            #target_pos[2] += 0.5
+            updatedTagPos[2] += 0.6
+            desiredPosition = updatedTagPos
+            dist = updatedTagPos - current_position
+            workspaceVel = (updatedTagPos - current_position)/(1/rate)
+            print("workspaceVel: ", workspaceVel)
 
+            numInterSteps = 50
+            avg = 1 # avg 5 IK solves to ensure accuracy
+            innerR = rospy.Rate(rate * numInterSteps) # rate for intermediate step calc & execution
+            innerT = 1 / (rate * numInterSteps)
 
-            updated_traj, ShouldMove = get_traj(self._limb, self._kin, ik_solver, updatedTagPos, rate=rate, num_way=40) # in this case rate is how much time given to controller for path
-            if (ShouldMove):
-                self.execute_path(updated_traj, rate=100, timeout=200, log=False)
+            print("tolerated?", np.linalg.norm(dist) > 0.01)
+            if (np.linalg.norm(dist) > 0.01):
+                for i in range(numInterSteps):
+                    delta_t = 0.001
+                    intermediatePos = desiredPosition + i * innerT * workspaceVel
+                    intermediatePosbefore = intermediatePos - workspaceVel * delta_t
+
+                    intermediateJointPositions, unsuccfirstIk, succIKs1 = 0, 0, 0
+                    while succIKs1 < avg:
+                        IKcalc = np.array(ik_solver.get_ik(current_joint_position, intermediatePos[0], intermediatePos[1], intermediatePos[2], 0, 1, 0, 0))
+                        
+                        if IKcalc is None:
+                            unsuccfirstIk += 1
+                            if unsuccfirstIk > 10:
+                                rospy.signal_shutdown('MAX IK ATTEMPTS EXCEEDED AT x(t)={}'.format(i))
+                                print('MAX IK ATTEMPTS EXCEEDED AT x(t)={}'.format(i))
+                                return None
+                            continue
+                        else:
+                            succIKs1 += 1
+                            intermediateJointPositions += IKcalc
+                        
+                    intermediateJointPosition = intermediateJointPositions/succIKs1
+                    
+                    intermediateJointPositionbefores, unsuccsecondIK, succIKs2 = 0, 0, 0 
+                    while succIKs2 < avg:
+                        IKcalc = np.array(ik_solver.get_ik(current_joint_position, intermediatePosbefore[0], intermediatePosbefore[1], intermediatePosbefore[2], 0, 1, 0, 0))
+
+                        if IKcalc is None:
+                            unsuccsecondIK += 1
+                            if unsuccsecondIK > 10:
+                                rospy.signal_shutdown('MAX IK ATTEMPTS EXCEEDED AT x(t)={}'.format(i))
+                                print('MAX IK ATTEMPTS EXCEEDED AT x(t)={}'.format(i))
+                                return None
+                            continue
+                        else:
+                            succIKs2 += 1
+                            intermediateJointPositionbefores += IKcalc
+                        
+                    intermediateJointPositionbefore = intermediateJointPositionbefores/succIKs2
+                    
+                    jointVel = (intermediateJointPositionbefore - intermediateJointPosition) / delta_t
+
+                    # theta = ik_solver.get_ik(seed,
+                    #         x[0], x[1], x[2],      # XYZ
+                    #         x[3], x[4], x[5], x[6] # quat
+                    #         )
+                    # current_joint_position = intermediateJointPosition
+                    current_joint_position = get_joint_positions(self._limb)
+                    #print("CURRENT Joint POSITION:", current_joint_position)
+
+                    #print("Target Joint Vel num:", i,  jointVel)
+                    
+                    self.step_control(intermediateJointPosition, jointVel, None)
+                    
+                    innerR.sleep()
+            
             r.sleep()
+
+            print("loop time: ", ((rospy.Time.now() - start_t).to_sec() - t))
         
         return True
 
@@ -586,10 +669,10 @@ class PDJointVelocityController(Controller):
         self.Ki = np.diag(Ki)
         self.Kd = np.diag(Kd)
         self.Kw = Kw
-        
         self.integ_error = np.zeros(7)
-        
-        self.is_joinstpace_controller = True
+        self.kin = kin
+        self.limb = limb
+        self.is_jointspace_controller = True
 
     def step_control(self, target_position, target_velocity, target_acceleration):
         """
@@ -623,6 +706,75 @@ class PDJointVelocityController(Controller):
         controller_velocity = proportional + integral + derivative
 
         self._limb.set_joint_velocities(joint_array_to_dict(controller_velocity, self._limb))
+    
+    # def follow_ar_tag(self, tag, rate, timeout=1500, log=False):
+    #     """
+    #     takes in an AR tag number and follows it with the baxter's arm.  You 
+    #     should look at execute_path() for inspiration on how to write this. 
+
+    #     Parameters
+    #     ----------
+    #     tag : int
+    #         which AR tag to use
+    #     rate : int
+    #         This specifies how many ms between loops.  It is important to
+    #         use a rate and not a regular while loop because you want the
+    #         loop to refresh at a constant rate, otherwise you would have to
+    #         tune your PD parameters if the loop runs slower / faster
+    #     timeout : int
+    #         If you want the controller to terminate after a certain number
+    #         of seconds, specify a timeout in seconds.
+    #     log : bool
+    #         whether or not to display a plot of the controller pgrippererformance
+
+    #     Returns
+    #     -------
+    #     bool
+    #         whether the controller completes the path or not
+    #     """
+
+    #     # For timing
+    #     start_t = rospy.Time.now()
+    #     r = rospy.Rate(rate)
+    #     ik_solver = IK("base", "right_hand")
+
+    #     # tag looking
+    #     tfBuffer = tf2_ros.Buffer()
+    #     listener = tf2_ros.TransformListener(tfBuffer)
+
+    #     to_frame = 'ar_marker_11'
+    #     done = True
+
+    #     while not rospy.is_shutdown():
+    #         t = (rospy.Time.now() - start_t).to_sec()
+    #         if timeout is not None and t >= timeout:
+    #             # Set velocities to zerogripper
+    #             self.stop_moving()
+    #             return False
+
+    #         while not rospy.is_shutdown():
+    #             try:
+    #                 trans = tfBuffer.lookup_transform('base', to_frame, rospy.Time(0), rospy.Duration(10.0))
+    #                 trans2 = tfBuffer.lookup_transform('base', 'stp_022412TP99883_tip', rospy.Time(0), rospy.Duration(10.0))
+    #                 break
+    #             except Exception as e:
+    #                 print("Retrying ...")
+
+    #         updatedTagPos = np.array([getattr(trans.transform.translation, dim) for dim in ('x', 'y', 'z')])
+
+
+    #         print("mid loop: ", ((rospy.Time.now() - start_t).to_sec() - t))
+
+    #         updated_traj, ShouldMove = get_traj(self._limb, self._kin, trans2, ik_solver, updatedTagPos, rate=rate, num_way=1) # in this case rate is how much time given to controller for path
+    #         print("traj gen: ",  ((rospy.Time.now() - start_t).to_sec() - t))
+    #         if (ShouldMove):
+    #             self.execute_path(updated_traj, rate=rate/10, timeout=rate/1000, log=False)
+    #         print("upper loop: ", ((rospy.Time.now() - start_t).to_sec() - t))
+    #         r.sleep()
+
+    #         print("loop time: ", ((rospy.Time.now() - start_t).to_sec() - t))
+        
+    #     return True
 
 
 

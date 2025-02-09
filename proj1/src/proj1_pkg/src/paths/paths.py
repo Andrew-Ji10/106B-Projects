@@ -37,7 +37,7 @@ class MotionPath:
         self.trajectory = trajectory
         self.previous_computed_ik = get_joint_positions(self.limb)
 
-    def to_robot_trajectory(self, num_waypoints=300, jointspace=True):
+    def to_robot_trajectory(self, num_waypoints=10, jointspace=True):
         """
         Parameters
         ----------
@@ -48,6 +48,7 @@ class MotionPath:
             angle of each arm.  Workspace points are 3x', and describe the x,y,z
             position of the end effector.  
         """
+
         traj = JointTrajectory()
         traj.joint_names = self.limb.joint_names()
         points = []
@@ -93,7 +94,8 @@ class MotionPath:
 
         """
         point = JointTrajectoryPoint()
-        delta_t = .01
+    #    delta_t = .01
+        delta_t = .025
         if jointspace:
             x_t, x_t_1, x_t_2 = None, None, None
             ik_attempts = 0
