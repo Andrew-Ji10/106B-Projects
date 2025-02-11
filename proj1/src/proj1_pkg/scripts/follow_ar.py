@@ -115,8 +115,8 @@ def get_controller(controller_name, limb, kin):
         Kv = None
         controller = WorkspaceVelocityController(limb, kin, Kp, Kv)
     elif controller_name == 'jointspace':
-        Kp = 0.6 * np.array([1.8, 2.4, 1.7, 2, 2, 2.4, 2.5])
-        Kd = 0.005 * np.array([2, 1, 3, 0.5, 150, 1.2, 0.8])
+        Kp = 0.55 * np.array([1.8, 2.4, 1.7, 2, 2, 2.4, 2.5])
+        Kd = 0.005 * np.array([2, 1, 3, 0.5, 1.2, 1.2, 0.8])
         Ki = 0 * np.array([1.4, 1.4, 1.4, 1, 0.6, 0.6, 0.6])
         Kw = np.array([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])
         controller = PDJointVelocityController(limb, kin, Kp, Ki, Kd, Kw)
@@ -150,7 +150,7 @@ if __name__ == "__main__":
     parser.add_argument('-arm', '-a', type=str, default='right', help=
         'Options: left, right.  Default: right'
     )
-    parser.add_argument('-rate', type=int, default=25, help="""
+    parser.add_argument('-rate', type=int, default=50, help="""
         This specifies how many ms between loops (input is HZ).  It is important to use a rate
         and not a regular while loop because you want the loop to refresh at a
         constant rate, otherwise you would have to tune your PD parameters if 

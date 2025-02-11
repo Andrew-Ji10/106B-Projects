@@ -480,6 +480,20 @@ class Controller:
         bool
             whether the controller completes the path or not
         """
+        # vel limiting:
+        max_joint_vel = np.array([10,10,10,10,10,10,10])
+        min_joint_vel = -max_joint_vel
+
+        # pos limiting:
+
+
+        # For plotting
+        if log:
+            times = list()
+            actual_positions = list()
+            actual_velocities = list()
+            target_positions = list()
+            target_velocities = list()
 
         # For timing
         start_t = rospy.Time.now()
@@ -490,7 +504,7 @@ class Controller:
         tfBuffer = tf2_ros.Buffer()
         listener = tf2_ros.TransformListener(tfBuffer)
 
-        to_frame = 'ar_marker_12'
+        to_frame = 'ar_marker_10'
         done = True
 
         while not rospy.is_shutdown():
@@ -503,7 +517,7 @@ class Controller:
             while not rospy.is_shutdown():
                 try:
                     trans = tfBuffer.lookup_transform('base', to_frame, rospy.Time(0), rospy.Duration(10.0))
-                    trans2 = tfBuffer.lookup_transform('base', 'stp_022412TP99883_tip', rospy.Time(0), rospy.Duration(10.0))
+                    trans2 = tfBuffer.lookup_transform('base', 'right_gripper_tip', rospy.Time(0), rospy.Duration(10.0))
                     break
                 except Exception as e:
                     print("Retrying ...")
@@ -518,17 +532,20 @@ class Controller:
             updatedTagPos[2] += 0.6
             desiredPosition = updatedTagPos
             dist = updatedTagPos - current_position
-            workspaceVel = (updatedTagPos - current_position)/(1/rate)
+            vel_scale = 2
+            workspaceVel = (updatedTagPos - current_position)/(1/(vel_scale*rate))
             print("workspaceVel: ", workspaceVel)
 
             numInterSteps = 50
             avg = 1 # avg 5 IK solves to ensure accuracy
             innerR = rospy.Rate(rate * numInterSteps) # rate for intermediate step calc & execution
             innerT = 1 / (rate * numInterSteps)
+            error = np.linalg.norm(dist[:2])
 
-            print("tolerated?", np.linalg.norm(dist) > 0.01)
-            if (np.linalg.norm(dist) > 0.01):
+            print("tolerated?", not (error > 0.01), error, dist)
+            if (error > 0.01):
                 for i in range(numInterSteps):
+                    tloop = (rospy.Time.now() - start_t).to_sec()
                     delta_t = 0.001
                     intermediatePos = desiredPosition + i * innerT * workspaceVel
                     intermediatePosbefore = intermediatePos - workspaceVel * delta_t
@@ -567,6 +584,7 @@ class Controller:
                         
                     intermediateJointPositionbefore = intermediateJointPositionbefores/succIKs2
                     
+                    
                     jointVel = (intermediateJointPositionbefore - intermediateJointPosition) / delta_t
 
                     # theta = ik_solver.get_ik(seed,
@@ -575,9 +593,21 @@ class Controller:
                     #         )
                     # current_joint_position = intermediateJointPosition
                     current_joint_position = get_joint_positions(self._limb)
+                    current_joint_velocity = get_joint_velocities(self._limb)
                     #print("CURRENT Joint POSITION:", current_joint_position)
 
                     #print("Target Joint Vel num:", i,  jointVel)
+                    # For plotting
+                    #limiting
+                    jointVel = np.minimum(jointVel, max_joint_vel)
+                    jointVel = np.maximum(jointVel, min_joint_vel)
+
+                    if log:
+                        times.append(tloop)
+                        actual_positions.append(current_joint_position)
+                        actual_velocities.append(current_joint_velocity)
+                        target_positions.append(intermediateJointPosition)
+                        target_velocities.append(jointVel)
                     
                     self.step_control(intermediateJointPosition, jointVel, None)
                     
@@ -586,7 +616,15 @@ class Controller:
             r.sleep()
 
             print("loop time: ", ((rospy.Time.now() - start_t).to_sec() - t))
-        
+        if log:
+            self.plot_results(
+                times,
+                actual_positions, 
+                actual_velocities, 
+                target_positions, 
+                target_velocities
+            )
+
         return True
 
 class FeedforwardJointVelocityController(Controller):
@@ -598,7 +636,7 @@ class FeedforwardJointVelocityController(Controller):
         target_velocity: 7x' ndarray of desired velocities
         target_acceleration: 7x' ndarray of desired accelerations
         """
-        self._limb.set_joint_velocities(joint_array_to_dict(targgripperet_velocity, self._limb))
+        self._limb.set_joint_velocities(joint_array_to_dict(target_velocity, self._limb))
 
 class WorkspaceVelocityController(Controller):
     """

@@ -131,8 +131,8 @@ def get_controller(controller_name, limb, kin):
         Kv = None
         controller = WorkspaceVelocityController(limb, kin, Kp, Kv)
     elif controller_name == 'jointspace':
-        Kp = 4 * np.array([1.8, 2.4, 1.7, 2, 2, 2.4, 2.5])
-        Kd = 0.03 * np.array([2, 1, 3, 0.5, 150, 1.2, 0.8])
+        Kp = 4.25 * np.array([1.2, 2, 1.7, 1.5, .4, 2, 3])
+        Kd = 0.01 * np.array([2, 1, 2, 0.5, 3.2, 0.8, 0.6])
         Ki = 0 * np.array([1.4, 1.4, 1.4, 1, 0.6, 0.6, 0.6])
         Kw = np.array([0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])
         controller = PDJointVelocityController(limb, kin, Kp, Ki, Kd, Kw)
